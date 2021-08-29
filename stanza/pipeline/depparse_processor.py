@@ -42,14 +42,34 @@ class DepparseProcessor(UDProcessor):
                                min_length_to_batch_separately=self.config.get('min_length_to_batch_separately', DEFAULT_SEPARATE_BATCH))
             preds = []
             for i, b in enumerate(batch):
-                preds += self.trainer.predict(b)
+                preds.append(self.trainer.predict(b))
+
+            # Rearrange preds
+            n_preds = len(preds[0])
+            rearranged_preds = []
+            for i in range(n_preds):
+                pred = []
+                for pred_group in preds:
+                    pred.extend(pred_group[i])
+                rearranged_preds.append(pred)
+
+            preds = rearranged_preds
+
             if batch.data_orig_idx is not None:
-                preds = unsort(preds, batch.data_orig_idx)
-            batch.doc.set([doc.HEAD, doc.DEPREL], [y for x in preds for y in x])
-            # build dependencies based on predictions
-            for sentence in batch.doc.sentences:
-                sentence.build_dependencies()
-            return batch.doc
+                for p_i, pred in enumerate(preds):
+                    preds[p_i] = unsort(pred, batch.data_orig_idx)
+
+            docs = []
+            serialized = batch.doc.to_serialized()
+            for pred in preds:
+                copy = doc.Document.from_serialized(serialized)
+                copy.set([doc.HEAD, doc.DEPREL], [y for x in pred for y in x])
+                for sentence in copy.sentences:
+                    sentence.build_dependencies()
+
+                docs.append(copy)
+
+            return tuple(docs)
         except RuntimeError as e:
             if str(e).startswith("CUDA out of memory. Tried to allocate"):
                 new_message = str(e) + " ... You may be able to compensate for this by separating long sentences into their own batch with a parameter such as depparse_min_length_to_batch_separately=150 or by limiting the overall batch size with depparse_batch_size=400."

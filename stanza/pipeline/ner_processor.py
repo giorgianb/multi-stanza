@@ -32,12 +32,28 @@ class NERProcessor(UDProcessor):
             document, self.config['batch_size'], self.config, vocab=self.vocab, evaluation=True, preprocess_tags=False)
         preds = []
         for i, b in enumerate(batch):
-            preds += self.trainer.predict(b)
-        batch.doc.set([doc.NER], [y for x in preds for y in x], to_token=True)
-        # collect entities into document attribute
-        total = len(batch.doc.build_ents())
-        logger.debug(f'{total} entities found in document.')
-        return batch.doc
+            preds.append(self.trainer.predict(b))
+
+        n_preds = len(preds[0])
+        rearranged_preds = []
+        for i in range(n_preds):
+            pred = []
+            for pred_group in preds:
+                pred.extend(pred_group[i])
+            rearranged_preds.append(pred)
+        preds = rearranged_preds
+
+        docs = []
+        serialized = batch.doc.to_serialized()
+        for pred in preds:
+            copy = doc.Document.from_serialized(serialized)
+            copy.set([doc.NER], [y for x in pred for y in x], to_token=True)
+            docs.append(copy)
+            # collect entities into document attribute
+            total = len(copy.build_ents())
+            logger.debug(f'{total} entities found in document.')
+
+        return tuple(docs)
 
     def bulk_process(self, docs):
         """

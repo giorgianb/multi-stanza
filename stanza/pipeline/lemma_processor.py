@@ -53,9 +53,9 @@ class LemmaProcessor(UDProcessor):
         else:
             batch = DataLoader(document, self.config['batch_size'], self.config, evaluation=True, conll_only=True)
         if self.use_identity:
-            preds = [word.text for sent in batch.doc.sentences for word in sent.words]
+            preds = [[word.text for sent in batch.doc.sentences for word in sent.words]]
         elif self.config.get('dict_only', False):
-            preds = self.trainer.predict_dict(batch.doc.get([doc.TEXT, doc.UPOS]))
+            preds = [self.trainer.predict_dict(batch.doc.get([doc.TEXT, doc.UPOS]))]
         else:
             if self.config.get('ensemble_dict', False):
                 # skip the seq2seq model when we can
@@ -69,26 +69,50 @@ class LemmaProcessor(UDProcessor):
             edits = []
             for i, b in enumerate(seq2seq_batch):
                 ps, es = self.trainer.predict(b, self.config['beam_size'])
-                preds += ps
+                preds.append(ps)
                 if es is not None:
-                    edits += es
+                    edits.append(es)
+
+            # Rearrange to be (n_pred, document)
+            n_preds = len(preds[0])
+            rearranged_preds = []
+            rearranged_edits = []
+            for i in range(n_preds):
+                pred = []
+                edit = []
+                for pred_group, edit_group in zip(preds, edits):
+                    pred.extend(pred_group[i])
+                    edit.extend(edit_group[i])
+                rearranged_preds.append(pred)
+                rearranged_edits.append(edit)
+
+            preds = rearranged_preds
+            edits = rearranged_edits
 
             if self.config.get('ensemble_dict', False):
-                preds = self.trainer.postprocess([x for x, y in zip(batch.doc.get([doc.TEXT]), skip) if not y], preds, edits=edits)
-                # expand seq2seq predictions to the same size as all words
-                i = 0
-                preds1 = []
-                for s in skip:
-                    if s:
-                        preds1.append('')
-                    else:
-                        preds1.append(preds[i])
-                        i += 1
-                preds = self.trainer.ensemble(batch.doc.get([doc.TEXT, doc.UPOS]), preds1)
+                for p_i, (pred, edit) in enumerate(zip(preds, edits)):
+                    preds[p_i] = self.trainer.postprocess([x for x, y in zip(batch.doc.get([doc.TEXT]), skip) if not y], pred, edits=edit)
+                    # expand seq2seq predictions to the same size as all words
+                    i = 0
+                    preds1 = []
+                    for s in skip:
+                        if s:
+                            preds1.append('')
+                        else:
+                            preds1.append(pred[i])
+                            i += 1
+                    preds[p_i] = self.trainer.ensemble(batch.doc.get([doc.TEXT, doc.UPOS]), preds1)
             else:
-                preds = self.trainer.postprocess(batch.doc.get([doc.TEXT]), preds, edits=edits)
+                for p_i, (pred, edit) in enumerate(zip(preds, edits)):
+                    preds[p_i] = self.trainer.postprocess(batch.doc.get([doc.TEXT]), pred, edits=edit)
 
         # map empty string lemmas to '_'
-        preds = [max([(len(x), x), (0, '_')])[1] for x in preds]
-        batch.doc.set([doc.LEMMA], preds)
-        return batch.doc
+        docs = []
+        serialized = batch.doc.to_serialized()
+        for pred in preds:
+            copy = doc.Document.from_serialized(serialized)
+            pred = [max([(len(x), x), (0, '_')])[1] for x in pred]
+            copy.set([doc.LEMMA], pred)
+            docs.append(copy)
+
+        return tuple(docs)

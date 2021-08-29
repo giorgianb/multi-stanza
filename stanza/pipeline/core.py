@@ -28,8 +28,6 @@ from stanza.utils.helper_func import make_table
 
 logger = logging.getLogger('stanza')
 
-from icecream import ic
-
 class ResourcesFileNotFoundError(FileNotFoundError):
     def __init__(self, resources_filepath):
         super().__init__(f"Resources file not found at: {resources_filepath}  Try to download the model again.")
@@ -223,7 +221,9 @@ class Pipeline:
             if self.processors.get(processor_name):
                 process = self.processors[processor_name].bulk_process if bulk else self.processors[processor_name].process
                 doc = process(doc)
-                doc = doc[0] # For now, we just take the top result to pass it downstream
+                # Not all processors currently support multiple predictions
+                if type(doc) is tuple:
+                    doc = doc[0] # For now, we just take the top result to pass it downstream
         return doc
 
     def __call__(self, doc):
