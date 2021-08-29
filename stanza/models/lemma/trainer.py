@@ -99,7 +99,7 @@ class Trainer(object):
             edits = utils.unsort(edits, orig_idx)
         else:
             edits = None
-        return pred_tokens, edits
+        return (pred_tokens,), (edits,)
 
     def postprocess(self, words, preds, edits=None):
         """ Postprocess, mainly for handing edits. """

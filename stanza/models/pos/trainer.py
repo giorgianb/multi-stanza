@@ -78,7 +78,7 @@ class Trainer(BaseTrainer):
         pred_tokens = [[[upos_seqs[i][j], xpos_seqs[i][j], feats_seqs[i][j]] for j in range(sentlens[i])] for i in range(batch_size)]
         if unsort:
             pred_tokens = utils.unsort(pred_tokens, orig_idx)
-        return pred_tokens
+        return (pred_tokens,)
 
     def save(self, filename, skip_modules=True):
         model_state = self.model.state_dict()

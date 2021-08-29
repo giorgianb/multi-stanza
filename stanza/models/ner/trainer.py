@@ -110,7 +110,7 @@ class Trainer(BaseTrainer):
 
         if unsort:
             tag_seqs = utils.unsort(tag_seqs, orig_idx)
-        return tag_seqs
+        return (tag_seqs,)
 
     def save(self, filename, skip_modules=True):
         model_state = self.model.state_dict()

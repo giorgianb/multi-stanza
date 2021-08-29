@@ -30,7 +30,20 @@ class POSProcessor(UDProcessor):
             sort_during_eval=True)
         preds = []
         for i, b in enumerate(batch):
-            preds += self.trainer.predict(b)
-        preds = unsort(preds, batch.data_orig_idx)
-        batch.doc.set([doc.UPOS, doc.XPOS, doc.FEATS], [y for x in preds for y in x])
-        return batch.doc
+            preds.append(self.trainer.predict(b))
+
+        n_preds = len(preds[0])
+        docs = []
+        serialized = batch.doc.to_serialized()
+        from icecream import ic
+        for i in range(n_preds):
+            copy = doc.Document.from_serialized(serialized)
+            docs.append(copy)
+            ic(docs[i])
+            pred = []
+            for pred_group in preds:
+                pred.extend(pred_group[i])
+            pred = unsort(pred, batch.data_orig_idx)
+            docs[i].set([doc.UPOS, doc.XPOS, doc.FEATS], [y for x in pred for y in x])
+
+        return docs

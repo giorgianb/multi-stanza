@@ -82,7 +82,7 @@ class Trainer(BaseTrainer):
         pred_tokens = ["".join(seq) for seq in pred_seqs] # join chars to be tokens
         if unsort:
             pred_tokens = utils.unsort(pred_tokens, orig_idx)
-        return pred_tokens
+        return (pred_tokens,)
 
     def train_dict(self, pairs):
         """ Train a MWT expander given training word-expansion pairs. """
