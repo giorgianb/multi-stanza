@@ -12,6 +12,9 @@ from stanza.models.common import utils, loss
 from stanza.models.pos.model import Tagger
 from stanza.models.pos.vocab import MultiVocab
 
+from NextBest import NextBest
+
+
 logger = logging.getLogger('stanza')
 
 def unpack_batch(batch, use_cuda):
@@ -28,7 +31,7 @@ def unpack_batch(batch, use_cuda):
 
 class Trainer(BaseTrainer):
     """ A trainer for training models. """
-    def __init__(self, args=None, vocab=None, pretrain=None, model_file=None, use_cuda=False):
+    def __init__(self, args=None, vocab=None, pretrain=None, model_file=None, use_cuda=False, n_preds=3):
         self.use_cuda = use_cuda
         if model_file is not None:
             # load everything from file
@@ -44,6 +47,7 @@ class Trainer(BaseTrainer):
         else:
             self.model.cpu()
         self.optimizer = utils.get_optimizer(self.args['optim'], self.parameters, self.args['lr'], betas=(0.9, self.args['beta2']), eps=1e-6)
+        self.n_preds = n_preds
 
     def update(self, batch, eval=False):
         inputs, orig_idx, word_orig_idx, sentlens, wordlens = unpack_batch(batch, self.use_cuda)
@@ -65,19 +69,68 @@ class Trainer(BaseTrainer):
         return loss_val
 
     def predict(self, batch, unsort=True):
+        from icecream import ic
         inputs, orig_idx, word_orig_idx, sentlens, wordlens = unpack_batch(batch, self.use_cuda)
         word, word_mask, wordchars, wordchars_mask, upos, xpos, ufeats, pretrained = inputs
 
         self.model.eval()
         batch_size = word.size(0)
         _, preds = self.model(word, word_mask, wordchars, wordchars_mask, upos, xpos, ufeats, pretrained, word_orig_idx, sentlens, wordlens)
-        upos_seqs = [self.vocab['upos'].unmap(sent) for sent in preds[0].tolist()]
-        xpos_seqs = [self.vocab['xpos'].unmap(sent) for sent in preds[1].tolist()]
-        feats_seqs = [self.vocab['feats'].unmap(sent) for sent in preds[2].tolist()]
+        ic(preds[0].shape)
+        ic(preds[1].shape)
+        ic(preds[2].shape)
+        # TODO: for feats, generate the k-best feats
+        def unmap(feat, sent):
+            def itemize(tensor):
+                return (elem.item() for elem in tensor)
+                
+            def zipper(sent, score):
+                unmapped_sent = self.vocab[feat].unmap(sent)
+                return tuple(zip(self.vocab[feat].unmap(sent), itemize(score)))
 
-        pred_tokens = [[[upos_seqs[i][j], xpos_seqs[i][j], feats_seqs[i][j]] for j in range(sentlens[i])] for i in range(batch_size)]
+            with torch.no_grad():
+                sent = sent.transpose(0, 1) # Bring score to the front
+                scores, indices = torch.topk(sent, self.n_preds, dim=0)
+                # scores is (n, k)
+                # unmap(tuple(indices[:, 0])
+
+                return tuple(zipper(sentk, scorek) for sentk, scorek in zip(indices, scores))
+
+        def unmap_ufeats(sent):
+            def unmap(sent):
+                scores = tuple(map(lambda x: x[0].item(), sent))
+                features = tuple(map(lambda x: x[1], sent))
+                features = self.vocab['feats'].unmap(features)
+                return tuple(zip(features, scores))
+
+
+            with torch.no_grad():
+                sent = sent.transpose(0, 1) # Bring score to the front
+                scores, indices = torch.topk(sent, self.n_preds, dim=0)
+                nb = iter(NextBest(scores, indices))
+                return tuple(unmap(next(nb)) for i in range(self.n_preds))
+
+        #upos_seqs = [self.vocab['upos'].unmap(sent) for sent in preds[0].tolist()]
+        #xpos_seqs = [self.vocab['xpos'].unmap(sent) for sent in preds[1].tolist()]
+        #feats_seqs = [self.vocab['feats'].unmap(sent) for sent in preds[2].tolist()]
+        upos_seqs = [unmap('upos', sent) for sent in preds[0]]
+        xpos_seqs = [unmap('xpos', sent) for sent in preds[1]]
+        feats_seqs = [unmap_ufeats(sent) for sent in preds[2]]
+
+
+        #pred_tokens = [[[upos_seqs[i][j], xpos_seqs[i][j], feats_seqs[i][j]] for j in range(sentlens[i])] for i in range(batch_size)]
+        pred_tokens = [[[[upos_seqs[i][k][j], xpos_seqs[i][k][j], feats_seqs[i][k][j]] for j in range(sentlens[i])] for i in range(batch_size)] for k in range(self.n_preds)]
+        ic(pred_tokens)
+        ic(len(pred_tokens)) # Should be number of predictions
+        ic(len(pred_tokens[0])) # Should be number of batches
+        ic(len(pred_tokens[0][0])) # Should be number of sentences
+        ic(len(pred_tokens[0][0][0])) # Should b 3 (upos, xpos, feats_seq)
+        ic(len(pred_tokens[0][0][0][0])) # Should be 2 (unmapped, score)
+
         if unsort:
-            pred_tokens = utils.unsort(pred_tokens, orig_idx)
+            #pred_tokens = utils.unsort(pred_tokens, orig_idx)
+            # TODO: check if this is valid
+            pred_tokens = [utils.unsort(sent, orig_idx) for sent in pred_tokens]
         return (pred_tokens,)
 
     def save(self, filename, skip_modules=True):

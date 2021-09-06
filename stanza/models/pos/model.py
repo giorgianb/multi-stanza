@@ -85,12 +85,13 @@ class Tagger(nn.Module):
 
         # criterion
         self.crit = nn.CrossEntropyLoss(ignore_index=0) # ignore padding
+        self.max_feat_len = max(vocab['feats'].lens())
 
         self.drop = nn.Dropout(args['dropout'])
         self.worddrop = WordDropout(args['word_dropout'])
+        self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, word, word_mask, wordchars, wordchars_mask, upos, xpos, ufeats, pretrained, word_orig_idx, sentlens, wordlens):
-        
         def pack(x):
             return pack_padded_sequence(x, sentlens, batch_first=True)
         
@@ -125,7 +126,8 @@ class Tagger(nn.Module):
         upos_hid = F.relu(self.upos_hid(self.drop(lstm_outputs)))
         upos_pred = self.upos_clf(self.drop(upos_hid))
 
-        preds = [pad(upos_pred).max(2)[1]]
+        #preds = [pad(upos_pred).max(2)[1]]
+        preds = [pad(self.softmax(upos_pred))]
 
         upos = pack(upos).data
         loss = self.crit(upos_pred.view(-1, upos_pred.size(-1)), upos.view(-1))
@@ -152,19 +154,32 @@ class Tagger(nn.Module):
             for i in range(len(self.vocab['xpos'])):
                 xpos_pred = clffunc(self.xpos_clf[i], xpos_hid)
                 loss += self.crit(xpos_pred.view(-1, xpos_pred.size(-1)), xpos[:, i].view(-1))
-                xpos_preds.append(pad(xpos_pred).max(2, keepdim=True)[1])
-            preds.append(torch.cat(xpos_preds, 2))
+                #xpos_preds.append(pad(xpos_pred).max(2, keepdim=True)[1])
+                xpos_preds.append(pad(self.softmax(xpos_pred))) # TODO: is this softmax valid?
+            preds.append(torch.cat(xpos_preds, 2)) # TODO: this might need to be changed into something else
         else:
             xpos_pred = clffunc(self.xpos_clf, xpos_hid)
             loss += self.crit(xpos_pred.view(-1, xpos_pred.size(-1)), xpos.view(-1))
-            preds.append(pad(xpos_pred).max(2)[1])
+            #preds.append(pad(xpos_pred).max(2)[1])
+            preds.append(pad(self.softmax(xpos_pred)))
 
         ufeats_preds = []
         ufeats = pack(ufeats).data
+        # TODO: use backpropogation to "correct" the models predictions for ufeats using a POS tag
+        # This will probably be slow, so give the user an option to achieve this
         for i in range(len(self.vocab['feats'])):
             ufeats_pred = clffunc(self.ufeats_clf[i], ufeats_hid)
+            length = 0
             loss += self.crit(ufeats_pred.view(-1, ufeats_pred.size(-1)), ufeats[:, i].view(-1))
-            ufeats_preds.append(pad(ufeats_pred).max(2, keepdim=True)[1])
-        preds.append(torch.cat(ufeats_preds, 2))
+            #ufeats_preds.append(pad(ufeats_pred).max(2, keepdim=True)[1])
+            unpadded = self.softmax(ufeats_pred)
+            # Make sure to pad AFTER the softmax
+            pad_length = self.max_feat_len - unpadded.shape[-1]
+            padder_shape = unpadded.shape[:-1] + (pad_length,)
+            padded = torch.cat((unpadded, -1*torch.ones(padder_shape)), dim=-1)
+            ufeats_preds.append(pad(padded))
+        #preds.append(torch.cat(ufeats_preds, 2))
+        preds.append(torch.stack(ufeats_preds, dim=-1))
+
 
         return loss, preds
