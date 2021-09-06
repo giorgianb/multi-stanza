@@ -110,22 +110,12 @@ class Trainer(BaseTrainer):
                 nb = iter(NextBest(scores, indices))
                 return tuple(unmap(next(nb)) for i in range(self.n_preds))
 
-        #upos_seqs = [self.vocab['upos'].unmap(sent) for sent in preds[0].tolist()]
-        #xpos_seqs = [self.vocab['xpos'].unmap(sent) for sent in preds[1].tolist()]
-        #feats_seqs = [self.vocab['feats'].unmap(sent) for sent in preds[2].tolist()]
         upos_seqs = [unmap('upos', sent) for sent in preds[0]]
         xpos_seqs = [unmap('xpos', sent) for sent in preds[1]]
         feats_seqs = [unmap_ufeats(sent) for sent in preds[2]]
 
 
-        #pred_tokens = [[[upos_seqs[i][j], xpos_seqs[i][j], feats_seqs[i][j]] for j in range(sentlens[i])] for i in range(batch_size)]
         pred_tokens = [[[[upos_seqs[i][k][j], xpos_seqs[i][k][j], feats_seqs[i][k][j]] for j in range(sentlens[i])] for i in range(batch_size)] for k in range(self.n_preds)]
-        ic(pred_tokens)
-        ic(len(pred_tokens)) # Should be number of predictions
-        ic(len(pred_tokens[0])) # Should be number of batches
-        ic(len(pred_tokens[0][0])) # Should be number of sentences
-        ic(len(pred_tokens[0][0][0])) # Should b 3 (upos, xpos, feats_seq)
-        ic(len(pred_tokens[0][0][0][0])) # Should be 2 (unmapped, score)
 
         if unsort:
             #pred_tokens = utils.unsort(pred_tokens, orig_idx)
