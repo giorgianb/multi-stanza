@@ -12,7 +12,21 @@ from stanza.models.common import utils, loss
 from stanza.models.pos.model import Tagger
 from stanza.models.pos.vocab import MultiVocab
 
-from NextBest import NextBest
+from stanza.models.pos.NextBest import NextBest
+
+def get_indices(item, recurse=0):
+    def helper(item, index):
+        if type(item) is list or type(item) is tuple:
+            cur_recurse = 0
+            if recurse < len(item):
+                cur_recurse = recurse
+            next_item = item[cur_recurse]
+            index.append(len(item))
+            return helper(next_item, index)
+        else:
+            return index
+
+    return helper(item, [])
 
 
 logger = logging.getLogger('stanza')
@@ -76,9 +90,6 @@ class Trainer(BaseTrainer):
         self.model.eval()
         batch_size = word.size(0)
         _, preds = self.model(word, word_mask, wordchars, wordchars_mask, upos, xpos, ufeats, pretrained, word_orig_idx, sentlens, wordlens)
-        ic(preds[0].shape)
-        ic(preds[1].shape)
-        ic(preds[2].shape)
         # TODO: for feats, generate the k-best feats
         def unmap(feat, sent):
             def itemize(tensor):
@@ -116,11 +127,23 @@ class Trainer(BaseTrainer):
 
 
         pred_tokens = [[[[upos_seqs[i][k][j], xpos_seqs[i][k][j], feats_seqs[i][k][j]] for j in range(sentlens[i])] for i in range(batch_size)] for k in range(self.n_preds)]
+        # Pred_tokens
+        # Indices: ijkl
+        # i: n_pred 
+        # j: n_sentence
+        # k: n_word
+        # l: 0=upos, 1=xpos, 2=ufeats
 
         if unsort:
             #pred_tokens = utils.unsort(pred_tokens, orig_idx)
             # TODO: check if this is valid
             pred_tokens = [utils.unsort(sent, orig_idx) for sent in pred_tokens]
+            ic(orig_idx)
+            ic(get_indices(pred_tokens, recurse=0))
+            ic(get_indices(pred_tokens, recurse=1))
+            ic(get_indices(pred_tokens, recurse=2))
+
+
         return (pred_tokens,)
 
     def save(self, filename, skip_modules=True):

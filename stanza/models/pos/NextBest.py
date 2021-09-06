@@ -73,7 +73,7 @@ class NextBest:
         scores = self._scores
         indices = self._indices
 
-        self._queues = [iter(WordNextBest(scores[:, i, :], indices[:, i, :])) for i in range(self._n_words)]
+        self._queues = [iter(WordNextBest(scores[:, i, :], indices[:, i, :])) for i in range(self._n_words) if torch.any(scores[:, i, :] != 0)]
         self._values = None
         return self
 
