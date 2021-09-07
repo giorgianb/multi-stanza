@@ -32,7 +32,9 @@ class WordNextBest:
         features = torch.gather(self._indices, 0, start_index).squeeze()
         self._seen = set()
         self._tie_counter = 0
-        self._queue = [(-torch.sum(features_score), 0, features, start_index)]
+        tc = self._tie_counter
+        self._tie_counter += 1
+        self._queue = [(-torch.mean(features_score), tc, features, start_index)]
         self._seen.add(self.__index_hash(start_index))
         self._tie_counter += 1
         return self
@@ -43,21 +45,23 @@ class WordNextBest:
 
         features_score_ret, tc, features_ret, ci = heapq.heappop(self._queue)
         for i in range(self._n_features):
-            if ci[0, i] + 1 < self._n_pred:
-                ni = torch.clone(ci)
-                ni[0, i] += 1
-                ni_hash = self.__index_hash(ni)
-                if ni_hash in self._seen:
-                    continue
-                features_score = torch.gather(self._scores, 0, ni).squeeze()
-                if torch.any(features_score < 0):
-                    continue
+            if ci[0, i] + 1 >= self._n_pred:
+                continue
 
-                self._seen.add(ni_hash)
-                features = torch.gather(self._indices, 0, ni).squeeze()
-                tc = self._tie_counter
-                heapq.heappush(self._queue, (-torch.sum(features_score), tc, features, ni))
-                self._tie_counter += 1
+            ni = torch.clone(ci)
+            ni[0, i] += 1
+            ni_hash = self.__index_hash(ni)
+            if ni_hash in self._seen:
+                continue
+            features_score = torch.gather(self._scores, 0, ni).squeeze()
+            if torch.any(features_score < 0):
+                continue
+
+            self._seen.add(ni_hash)
+            features = torch.gather(self._indices, 0, ni).squeeze()
+            tc = self._tie_counter
+            heapq.heappush(self._queue, (-torch.mean(features_score), tc, features, ni))
+            self._tie_counter += 1
         return -features_score_ret, features_ret
 
 class NextBest:

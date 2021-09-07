@@ -144,7 +144,7 @@ class Trainer(BaseTrainer):
             ic(get_indices(pred_tokens, recurse=2))
 
 
-        return (pred_tokens,)
+        return pred_tokens
 
     def save(self, filename, skip_modules=True):
         model_state = self.model.state_dict()
