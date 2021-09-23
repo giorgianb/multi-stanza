@@ -7,6 +7,69 @@ from stanza.models.lemma.data import DataLoader
 from stanza.models.lemma.trainer import Trainer
 from stanza.pipeline._constants import *
 from stanza.pipeline.processor import UDProcessor, register_processor
+import itertools
+import heapq
+
+class NextBest:
+    # We want to return the next-best overall prediction
+    # For a single sentence out of all of them, we modify the lemma
+    def __init__(self, preds, scores):
+        # preds: (n_pred, n_word)
+        # score: (n_pred, n_word)
+        self._preds = preds
+        self._scores = scores
+        self._n_preds = len(self._preds)
+        self._n_words = len(self._preds[0])
+
+    def _access(self, index):
+        # index: (nwords)
+        # each entry is < n_preds
+        return [self._preds[idx][i] for i, idx in enumerate(index)]
+
+    def _score(self, index):
+        # Simple summation across all scores and all features
+
+        score = sum(self._scores[idx][i] for i, idx in enumerate(index))
+        return score.item()
+
+    def __iter__(self):
+        # What does an index look like?
+        # index is (n_sentence, n_word)
+        # Use simple summation to combine score across features
+        self._seen = set()
+        start_index = (0,) * self._n_words
+        score = self._score(start_index)
+        self._tie_counter = 0
+        tc = self._tie_counter
+        self._tie_counter += 1
+        self._queue = [(-score, tc, start_index)]
+        self._seen.add(start_index)
+
+        return self
+
+    def __next__(self):
+        if len(self._queue) == 0:
+            raise StopIteration
+
+        score_ret, _, index_ret = heapq.heappop(self._queue)
+        for i in range(self._n_words):
+            if index_ret[i] + 1 >= self._n_preds:
+                continue
+
+            new_index = list(index_ret)
+            new_index[i] += 1
+            new_index = tuple(new_index)
+
+            if new_index in self._seen:
+                continue
+
+            self._seen.add(new_index)
+            new_score = self._score(new_index)
+            tc = self._tie_counter
+            self._tie_counter += 1
+            heapq.heappush(self._queue, (-new_score, tc, new_index))
+
+        return -score_ret, self._access(index_ret)
 
 @register_processor(name=LEMMA)
 class LemmaProcessor(UDProcessor):
@@ -23,6 +86,7 @@ class LemmaProcessor(UDProcessor):
         # run lemmatizer in identity mode
         self._use_identity = None
         self._pretagged = None
+        self._n_preds = config.get('n_preds', 3)
         super().__init__(config, pipeline, use_gpu)
 
     @property
@@ -36,7 +100,7 @@ class LemmaProcessor(UDProcessor):
             self.config['batch_size'] = LemmaProcessor.DEFAULT_BATCH_SIZE
         else:
             self._use_identity = False
-            self._trainer = Trainer(model_file=config['model_path'], use_cuda=use_gpu)
+            self._trainer = Trainer(model_file=config['model_path'], use_cuda=use_gpu, n_preds=self._n_preds)
 
     def _set_up_requires(self):
         self._pretagged = self._config.get('pretagged', None)
@@ -67,31 +131,39 @@ class LemmaProcessor(UDProcessor):
 
             preds = []
             edits = []
+            scores = []
             for i, b in enumerate(seq2seq_batch):
-                ps, es = self.trainer.predict(b, self.config['beam_size'])
+                ps, ss, es = self.trainer.predict(b, self.config['beam_size'])
                 preds.append(ps)
+                scores.append(ss)
                 if es is not None:
-                    edits.append(es)
+                    edits += es
 
             # Rearrange to be (n_pred, document)
-            n_preds = len(preds[0])
             rearranged_preds = []
-            rearranged_edits = []
-            for i in range(n_preds):
+            rearranged_scores = []
+            for i in range(self._n_preds):
                 pred = []
-                edit = []
-                for pred_group, edit_group in zip(preds, edits):
+                score = []
+                for pred_group, score_group  in zip(preds, scores):
                     pred.extend(pred_group[i])
-                    edit.extend(edit_group[i])
+                    score.extend(score_group[i])
+
                 rearranged_preds.append(pred)
-                rearranged_edits.append(edit)
+                rearranged_scores.append(score)
 
             preds = rearranged_preds
-            edits = rearranged_edits
+            scores = rearranged_scores
 
+            # TODO: check if this is OK? This would mean that we skipped everything
+            preds = preds if len(preds) > 0 else [[]]
+
+            total_scores = []
+            complete_preds = []
             if self.config.get('ensemble_dict', False):
-                for p_i, (pred, edit) in enumerate(zip(preds, edits)):
-                    preds[p_i] = self.trainer.postprocess([x for x, y in zip(batch.doc.get([doc.TEXT]), skip) if not y], pred, edits=edit)
+                best_preds = itertools.islice(NextBest(preds, scores), self._n_preds)
+                for score, pred in best_preds:
+                    pred = self.trainer.postprocess([x for x, y in zip(batch.doc.get([doc.TEXT]), skip) if not y], pred, edits=edits)
                     # expand seq2seq predictions to the same size as all words
                     i = 0
                     preds1 = []
@@ -101,18 +173,24 @@ class LemmaProcessor(UDProcessor):
                         else:
                             preds1.append(pred[i])
                             i += 1
-                    preds[p_i] = self.trainer.ensemble(batch.doc.get([doc.TEXT, doc.UPOS]), preds1)
+                    pred = self.trainer.ensemble(batch.doc.get([doc.TEXT, doc.UPOS]), preds1)
+                    complete_preds.append(pred)
+                    total_scores.append(score)
             else:
-                for p_i, (pred, edit) in enumerate(zip(preds, edits)):
-                    preds[p_i] = self.trainer.postprocess(batch.doc.get([doc.TEXT]), pred, edits=edit)
+                best_preds = itertools.islice(NextBest(preds, scores), self._n_preds)
+                for score, pred in best_preds:
+                    pred = self.trainer.postprocess(batch.doc.get([doc.TEXT]), pred, edits=edits)
+                    complete_preds.append(pred)
+                    total_scores.append(score)
 
         # map empty string lemmas to '_'
         docs = []
         serialized = batch.doc.to_serialized()
-        for pred in preds:
+        for score, pred in zip(total_scores, complete_preds):
             copy = doc.Document.from_serialized(serialized)
             pred = [max([(len(x), x), (0, '_')])[1] for x in pred]
             copy.set([doc.LEMMA], pred)
+            copy.set([doc.LEMMA_SCORE], [score], to_document=True)
             docs.append(copy)
 
         return tuple(docs)
