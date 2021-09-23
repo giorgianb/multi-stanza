@@ -113,8 +113,11 @@ class POSProcessor(UDProcessor):
     def _set_up_model(self, config, use_gpu):
         # get pretrained word vectors
         self._pretrain = Pretrain(config['pretrain_path']) if 'pretrain_path' in config else None
+        self._n_preds = config.get('n_preds', 3)
         # set up trainer
-        self._trainer = Trainer(pretrain=self.pretrain, model_file=config['model_path'], use_cuda=use_gpu)
+        self._trainer = Trainer(pretrain=self.pretrain, model_file=config['model_path'], use_cuda=use_gpu, n_preds=self._n_preds)
+
+
 
     def process(self, document):
         batch = DataLoader(
@@ -127,9 +130,8 @@ class POSProcessor(UDProcessor):
         # n_batch, n_pred, n_sentence, n_word, feature
 
         # Get rid of batch
-        n_preds = len(preds[0])
         merged_preds = []
-        for i in range(n_preds):
+        for i in range(self._n_preds):
             pred = []
             for pred_minibatch in preds:
                 pred.extend(pred_minibatch[i])
@@ -139,7 +141,7 @@ class POSProcessor(UDProcessor):
         docs = []
         scores = []
         serialized = batch.doc.to_serialized()
-        for score, pred in itertools.islice(NextBest(preds), n_preds):
+        for score, pred in itertools.islice(NextBest(preds),self._n_preds):
             copy = doc.Document.from_serialized(serialized)
             # pred should be (n_sent, n_word, n_feature)
             pred = unsort(pred, batch.data_orig_idx)
