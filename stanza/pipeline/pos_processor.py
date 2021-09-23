@@ -75,7 +75,6 @@ class NextBest:
         return self
 
     def __next__(self):
-        from icecream import ic
         if len(self._queue) == 0:
             raise StopIteration
 
@@ -138,12 +137,15 @@ class POSProcessor(UDProcessor):
         preds = merged_preds
 
         docs = []
+        scores = []
         serialized = batch.doc.to_serialized()
         for score, pred in itertools.islice(NextBest(preds), n_preds):
             copy = doc.Document.from_serialized(serialized)
             # pred should be (n_sent, n_word, n_feature)
             pred = unsort(pred, batch.data_orig_idx)
             copy.set([doc.UPOS, doc.XPOS, doc.FEATS], [y for x in pred for y in x])
+            copy.set([doc.POS_SCORE], [score], to_document=True)
             docs.append(copy)
+            scores.append(score)
 
-        return tuple(docs)
+        return tuple(docs) #, scores TODO: return scores eventually
