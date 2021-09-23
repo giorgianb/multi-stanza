@@ -83,7 +83,6 @@ class Trainer(BaseTrainer):
         return loss_val
 
     def predict(self, batch, unsort=True):
-        from icecream import ic
         inputs, orig_idx, word_orig_idx, sentlens, wordlens = unpack_batch(batch, self.use_cuda)
         word, word_mask, wordchars, wordchars_mask, upos, xpos, ufeats, pretrained = inputs
 
@@ -101,7 +100,7 @@ class Trainer(BaseTrainer):
 
             with torch.no_grad():
                 sent = sent.transpose(0, 1) # Bring score to the front
-                scores, indices = torch.topk(sent, self.n_preds, dim=0)
+                scores, indices = torch.topk(sent, min(self.n_preds, sent.shape[0]), dim=0)
                 # scores is (n, k)
                 # unmap(tuple(indices[:, 0])
 
@@ -117,7 +116,7 @@ class Trainer(BaseTrainer):
 
             with torch.no_grad():
                 sent = sent.transpose(0, 1) # Bring score to the front
-                scores, indices = torch.topk(sent, self.n_preds, dim=0)
+                scores, indices = torch.topk(sent, min(self.n_preds, sent.shape[0]), dim=0)
                 nb = iter(NextBest(scores, indices))
                 return tuple(unmap(next(nb)) for i in range(self.n_preds))
 
