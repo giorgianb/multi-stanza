@@ -138,12 +138,7 @@ class Trainer(BaseTrainer):
             #pred_tokens = utils.unsort(pred_tokens, orig_idx)
             # TODO: check if this is valid
             pred_tokens = [utils.unsort(sent, orig_idx) for sent in pred_tokens]
-            ic(orig_idx)
-            ic(get_indices(pred_tokens, recurse=0))
-            ic(get_indices(pred_tokens, recurse=1))
-            ic(get_indices(pred_tokens, recurse=2))
-
-
+        
         return pred_tokens
 
     def save(self, filename, skip_modules=True):
