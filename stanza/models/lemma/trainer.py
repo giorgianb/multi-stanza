@@ -11,7 +11,7 @@ from torch import nn
 import torch.nn.init as init
 
 import stanza.models.common.seq2seq_constant as constant
-from stanza.models.common.seq2seq_model import Seq2SeqModel
+from stanza.models.lemma.seq2seq_model import Seq2SeqModel
 from stanza.models.common import utils, loss
 from stanza.models.lemma import edit
 from stanza.models.lemma.vocab import MultiVocab
@@ -29,7 +29,8 @@ def unpack_batch(batch, use_cuda):
 
 class Trainer(object):
     """ A trainer for training models. """
-    def __init__(self, args=None, vocab=None, emb_matrix=None, model_file=None, use_cuda=False):
+    def __init__(self, args=None, vocab=None, emb_matrix=None, model_file=None, use_cuda=False, n_preds=3):
+        self.n_preds = n_preds
         self.use_cuda = use_cuda
         if model_file is not None:
             # load everything from file
@@ -82,24 +83,30 @@ class Trainer(object):
         self.optimizer.step()
         return loss_val
 
+    # TODO: change beam size to be npred in the calling function
     def predict(self, batch, beam_size=1):
         inputs, orig_idx = unpack_batch(batch, self.use_cuda)
         src, src_mask, tgt, tgt_mask, pos, edits = inputs
 
         self.model.eval()
         batch_size = src.size(0)
-        preds, edit_logits = self.model.predict(src, src_mask, pos=pos, beam_size=beam_size)
-        pred_seqs = [self.vocab['char'].unmap(ids) for ids in preds] # unmap to tokens
-        pred_seqs = utils.prune_decoded_seqs(pred_seqs)
-        pred_tokens = ["".join(seq) for seq in pred_seqs] # join chars to be tokens
-        pred_tokens = utils.unsort(pred_tokens, orig_idx)
+        preds, scores, edit_logits = self.model.predict(src, src_mask, pos=pos, beam_size=beam_size, n_preds=self.n_preds)
+        # Rearrange preds such that preds[i] is the list of i-th best lemma guesses
+        preds = [[best_k[i] for best_k in preds] for i in range(len(preds[0]))]
+        scores = [[best_k[i] for best_k in scores] for i in range(len(scores[0]))]
+        pred_seqs = [[self.vocab['char'].unmap(ids) for ids in best_k_group] for best_k_group in preds] # unmap to tokens
+        pred_seqs = [utils.prune_decoded_seqs(best_k_group) for best_k_group in pred_seqs]
+        pred_tokens = [["".join(seq) for seq in best_k_group] for best_k_group in pred_seqs] # join chars to be tokens
+        pred_tokens = [utils.unsort(best_k_group, orig_idx) for best_k_group in pred_tokens]
+        scores = [utils.unsort(best_k_group, orig_idx) for best_k_group in scores]
         if self.args.get('edit', False):
             assert edit_logits is not None
             edits = np.argmax(edit_logits.data.cpu().numpy(), axis=1).reshape([batch_size]).tolist()
             edits = utils.unsort(edits, orig_idx)
         else:
             edits = None
-        return (pred_tokens,), (edits,)
+        
+        return pred_tokens, scores, edits
 
     def postprocess(self, words, preds, edits=None):
         """ Postprocess, mainly for handing edits. """
