@@ -217,14 +217,22 @@ class Pipeline:
 
         # determine whether we are in bulk processing mode for multiple documents
         bulk=(isinstance(doc, list) and len(doc) > 0 and isinstance(doc[0], Document))
+        docs = [doc]
         for processor_name in PIPELINE_NAMES:
             if self.processors.get(processor_name):
+                new_docs = []
                 process = self.processors[processor_name].bulk_process if bulk else self.processors[processor_name].process
-                doc = process(doc)
-                # Not all processors currently support multiple predictions
-                if type(doc) is tuple:
-                    doc = doc[0] # For now, we just take the top result to pass it downstream
-        return doc
+                for doc in docs:
+                    doc = process(doc)
+                    # Not all processors currently support multiple predictions at the moment
+                    # TODO: modify this for beam search
+                    if type(doc) is tuple:
+                        new_docs.extend(doc)
+                    else:
+                        new_docs.append(doc)
+                docs = new_docs
+
+        return docs
 
     def __call__(self, doc):
         assert any([isinstance(doc, str), isinstance(doc, list),
