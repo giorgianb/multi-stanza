@@ -36,6 +36,9 @@ class NextBest:
         # What does an index look like?
         # index is (n_sentence, n_word)
         # Use simple summation to combine score across features
+        if self._n_words == 0:
+            return iter(((1, []),))
+
         self._seen = set()
         start_index = (0,) * self._n_words
         score = self._score(start_index)
