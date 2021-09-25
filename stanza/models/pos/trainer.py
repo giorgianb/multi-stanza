@@ -124,8 +124,7 @@ class Trainer(BaseTrainer):
         xpos_seqs = [unmap('xpos', sent) for sent in preds[1]]
         feats_seqs = [unmap_ufeats(sent) for sent in preds[2]]
 
-
-        pred_tokens = [[[[upos_seqs[i][k][j], xpos_seqs[i][k][j], feats_seqs[i][k][j]] for j in range(sentlens[i])] for i in range(batch_size)] for k in range(self.n_preds)]
+        pred_tokens = [[[[upos_seqs[i][k][j], xpos_seqs[i][k][j], feats_seqs[i][k][j]] for j in range(sentlens[i])] for i in range(batch_size)] for k in range(len(upos_seqs[0]))]
         # Pred_tokens
         # Indices: ijkl
         # i: n_pred 
