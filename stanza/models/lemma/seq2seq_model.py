@@ -247,10 +247,12 @@ class Seq2SeqModel(nn.Module):
     def predict(self, src, src_mask, pos=None, beam_size=5, n_preds=3):
         """ Predict with beam search. """
         beam_size = max(beam_size, n_preds)
-        if beam_size == 1 and n_preds == 1:
-            # TODO: Update this so that it returns
-            # what multi-pred expects
-            return self.predict_greedy(src, src_mask, pos=pos)
+        # TODO: use greedy prediction so that we save computation time
+        # when our beam size is one
+        #if beam_size == 1 and n_preds == 1:
+        #    # TODO: Update this so that it returns
+        #    # what multi-pred expects
+        #    return self.predict_greedy(src, src_mask, pos=pos)
 
         enc_inputs = self.embedding(src)
         batch_size = enc_inputs.size(0)
