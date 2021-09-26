@@ -13,9 +13,6 @@ import heapq
 import itertools
 from functools import reduce
 
-from icecream import ic
-
-
 @register_processor(name=POS)
 class POSProcessor(UDProcessor):
     # set of processor requirements this processor fulfills

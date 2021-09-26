@@ -1,6 +1,5 @@
 import heapq
 import torch
-from icecream import ic
 
 # (npred, nwords)
 # sent: (nwords, feature_size)
