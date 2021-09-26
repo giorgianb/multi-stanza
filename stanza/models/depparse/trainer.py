@@ -13,6 +13,8 @@ from stanza.models.common.chuliu_edmonds import chuliu_edmonds_one_root
 from stanza.models.depparse.model import Parser
 from stanza.models.pos.vocab import MultiVocab
 
+import stanza.models.depparse.alternatives as alternatives
+
 logger = logging.getLogger('stanza')
 
 def unpack_batch(batch, use_cuda):
@@ -29,7 +31,8 @@ def unpack_batch(batch, use_cuda):
 
 class Trainer(BaseTrainer):
     """ A trainer for training models. """
-    def __init__(self, args=None, vocab=None, pretrain=None, model_file=None, use_cuda=False):
+    def __init__(self, args=None, vocab=None, pretrain=None, model_file=None, use_cuda=False, n_preds=3):
+        self.n_preds = n_preds
         self.use_cuda = use_cuda
         if model_file is not None:
             # load everything from file
@@ -72,13 +75,41 @@ class Trainer(BaseTrainer):
         self.model.eval()
         batch_size = word.size(0)
         _, preds = self.model(word, word_mask, wordchars, wordchars_mask, upos, xpos, ufeats, pretrained, lemma, head, deprel, word_orig_idx, sentlens, wordlens)
-        head_seqs = [chuliu_edmonds_one_root(adj[:l, :l])[1:] for adj, l in zip(preds[0], sentlens)] # remove attachment for the root
-        deprel_seqs = [self.vocab['deprel'].unmap([preds[1][i][j+1][h] for j, h in enumerate(hs)]) for i, hs in enumerate(head_seqs)]
+        #head_seqs = [chuliu_edmonds_one_root(adj[:l, :l])[1:] for adj, l in zip(preds[0], sentlens)] # remove attachment for the root
+        #deprel_seqs = [self.vocab['deprel'].unmap([preds[1][i][j+1][h] for j, h in enumerate(hs)]) for i, hs in enumerate(head_seqs)]
 
-        pred_tokens = [[[str(head_seqs[i][j]), deprel_seqs[i][j]] for j in range(sentlens[i]-1)] for i in range(batch_size)]
+        head_seqs = []
+        deprel_seqs = []
+        score_seqs = []
+        # get the head graph and the deprel map for each sentence
+        for i, (head, deps) in enumerate(zip(preds[0], preds[1])):
+            head_seq = []
+            deprel_seq = []
+            l = sentlens[i]
+            k_best = alternatives.GetKBest(head[:l, :l], self.n_preds)
+            for j in range(sentlens[i] - 1):
+                headc = []
+                deprelc = []
+                score_seq = []
+                for n_tree, (tree, score) in enumerate(k_best):
+                    score_seq.append(score)
+                    best_in_edge = tree[j + 1]
+                    source = best_in_edge.u - 1
+                    headc.append(source + 1)
+                    edge = self.vocab['deprel'].unmap((deps[j + 1][source + 1],))[0]
+                    deprelc.append(edge)
+                head_seq.append(headc)
+                deprel_seq.append(deprelc)
+
+            head_seqs.append(head_seq)
+            deprel_seqs.append(deprel_seq)
+            score_seqs.append(score_seq) # Score is sentence-global
+
+        #pred_tokens = [[[str(head_seqs[i][j]), deprel_seqs[i][j]] for j in range(sentlens[i]-1)] for i in range(batch_size)]
+        pred_tokens = [[(head_seqs[i][j], deprel_seqs[i][j]) for j in range(sentlens[i]-1)] for i in range(batch_size)]
         if unsort:
             pred_tokens = utils.unsort(pred_tokens, orig_idx)
-        return (pred_tokens,)
+        return pred_tokens, score_seqs
 
     def save(self, filename, skip_modules=True):
         model_state = self.model.state_dict()
