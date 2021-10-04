@@ -24,14 +24,15 @@ class POSProcessor(UDProcessor):
         # get pretrained word vectors
         self._pretrain = Pretrain(config['pretrain_path']) if 'pretrain_path' in config else None
         self._n_preds = config.get('n_preds', 3)
+        self._n_trainer_preds = config.get('n_trainer_preds', 36) # There are 36 XPOS tags
         # set up trainer
-        self._trainer = Trainer(pretrain=self.pretrain, model_file=config['model_path'], use_cuda=use_gpu, n_preds=self._n_preds)
+        self._trainer = Trainer(pretrain=self.pretrain, model_file=config['model_path'], use_cuda=use_gpu, n_preds=self._n_trainer_preds)
         self._next_upos = lambda upos, xpos, ufeats, upi, xpi, ufi: upi + 1
         self._next_xpos = lambda upos, xpos, ufeats, upi, xpi, ufi: xpi + 1
         self._next_ufeats = lambda upos, xpos, ufeats, upi, xpi, ufi: ufi + 1
         self._scorer = lambda ups, xps, ufs: (ups + xps + ufs) / 3
 
-        if config.get('dependency_parse_aware_top_k', 0) == 1:
+        if config.get('top_k_mode', 0) == 1:
             # TODO: these have to be verified
             # Look at noun. Is it ok to have it a broad subset (all nouns, including proper)?
             # or a strict one?
@@ -76,7 +77,7 @@ class POSProcessor(UDProcessor):
             # TODO: figure out how to enable XPOS score
             self._scorer = lambda ups, xps, ufs: (ups + ufs) / 2
 
-        elif config.get('dependency_parse_aware_top_k', 0) == 2:
+        elif config.get('top_k_mode', 0) == 2:
             EQUIVALENCE_CLASSES = (
                     {'JJ', 'JJR', 'JJS'},
                     {'NN', 'NNS', 'NNP', 'NNPS'},
@@ -111,7 +112,7 @@ class POSProcessor(UDProcessor):
 
         # Get rid of batch
         merged_preds = []
-        n_preds = min(self._n_preds, len(preds[0]))
+        n_preds = min(self._n_trainer_preds, len(preds[0]))
         for i in range(n_preds):
             pred = []
             for pred_minibatch in preds:
