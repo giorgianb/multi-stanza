@@ -24,7 +24,7 @@ class POSProcessor(UDProcessor):
         # get pretrained word vectors
         self._pretrain = Pretrain(config['pretrain_path']) if 'pretrain_path' in config else None
         self._n_preds = config.get('n_preds', 3)
-        self._n_trainer_preds = config.get('n_trainer_preds', 36) # There are 36 XPOS tags
+        self._n_trainer_preds = config.get('n_trainer_preds', 54) # Stanza generates 54 XPOS tags
         # set up trainer
         self._trainer = Trainer(pretrain=self.pretrain, model_file=config['model_path'], use_cuda=use_gpu, n_preds=self._n_trainer_preds)
         self._next_upos = lambda upos, xpos, ufeats, upi, xpi, ufi: upi + 1
