@@ -100,6 +100,10 @@ class POSProcessor(UDProcessor):
                 return len(xpos) # This indicates that there are no more options
             self._next_xpos = next_xpos
 
+        self._next_upos = config.get('next_upos', self._next_upos)
+        self._next_xpos = config.get('next_xpos', self._next_xpos)
+        self._next_ufeats = config.get('next_ufeats', self._next_ufeats)
+
     def process(self, document):
         batch = DataLoader(
             document, self.config['batch_size'], self.config, self.pretrain, vocab=self.vocab, evaluation=True,
