@@ -27,9 +27,9 @@ class POSProcessor(UDProcessor):
         self._n_trainer_preds = config.get('n_trainer_preds', 54) # Stanza generates 54 XPOS tags
         # set up trainer
         self._trainer = Trainer(pretrain=self.pretrain, model_file=config['model_path'], use_cuda=use_gpu, n_preds=self._n_trainer_preds)
-        self._next_upos = lambda upos, xpos, ufeats, upi, xpi, ufi: upi + 1
-        self._next_xpos = lambda upos, xpos, ufeats, upi, xpi, ufi: xpi + 1
-        self._next_ufeats = lambda upos, xpos, ufeats, upi, xpi, ufi: ufi + 1
+        self._next_upos = lambda upos, xpos, ufeats, upi, xpi, ufi, wi: upi + 1
+        self._next_xpos = lambda upos, xpos, ufeats, upi, xpi, ufi, wi: xpi + 1
+        self._next_ufeats = lambda upos, xpos, ufeats, upi, xpi, ufi, wi: ufi + 1
         self._scorer = lambda ups, xps, ufs: (ups + xps + ufs) / 3
 
         if config.get('top_k_mode', 0) == 1:
@@ -55,9 +55,9 @@ class POSProcessor(UDProcessor):
                     'VERB': {'VB', 'VBD', 'VBG', 'VBN', 'VBP', 'VBZ'},
                     'X': {'FW', 'LS'}
             }
-            def next_xpos(upos, xpos, ufeats, upi, xpi, ufi):
+            def next_xpos(upos, xpos, ufeats, upi, xpi, ufi, wi):
                 # get what would be the next upos tag
-                next_upos = self._next_upos(upos, xpos, ufeats, upi, xpi, ufi)
+                next_upos = self._next_upos(upos, xpos, ufeats, upi, xpi, ufi, wi)
                 # There's no more upos tags so we can't match
                 if next_upos >= len(upos):
                     return len(xpos) # This indicates no more options
@@ -88,7 +88,7 @@ class POSProcessor(UDProcessor):
             )
             NEED_CHECKED = reduce(lambda a, b: a | b, EQUIVALENCE_CLASSES)
             MAPPING = {t:c for c in EQUIVALENCE_CLASSES for t in c}
-            def next_xpos(upos, xpos, ufeats, upi, xpi, ufi):
+            def next_xpos(upos, xpos, ufeats, upi, xpi, ufi, wi):
                 if xpos[xpi][0] not in NEED_CHECKED:
                     return xpi + 1
 
@@ -201,7 +201,7 @@ class NextBest:
         upos = [self._upos[k][i][j] for k in range(len(self._upos))]
         xpos = [self._xpos[k][i][j] for k in range(len(self._upos))]
         ufeats = [self._ufeats[k][i][j] for k in range(len(self._upos))]
-        return next_feat(upos, xpos, ufeats, upos_i[i][j], xpos_i[i][j], ufeats_i[i][j])
+        return next_feat(upos, xpos, ufeats, upos_i[i][j], xpos_i[i][j], ufeats_i[i][j], (i, j))
         
 
     def __next__(self):
