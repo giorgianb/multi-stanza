@@ -45,7 +45,17 @@ def unpack_batch(batch, use_cuda):
 
 class Trainer(BaseTrainer):
     """ A trainer for training models. """
-    def __init__(self, args=None, vocab=None, pretrain=None, model_file=None, use_cuda=False, n_preds=3):
+    def __init__(
+            self, 
+            args=None, 
+            vocab=None, 
+            pretrain=None, 
+            model_file=None, 
+            use_cuda=False, 
+            n_upos_preds=1,
+            n_xpos_preds=1,
+            n_feats_preds=1
+        ):
         self.use_cuda = use_cuda
         if model_file is not None:
             # load everything from file
@@ -61,7 +71,9 @@ class Trainer(BaseTrainer):
         else:
             self.model.cpu()
         self.optimizer = utils.get_optimizer(self.args['optim'], self.parameters, self.args['lr'], betas=(0.9, self.args['beta2']), eps=1e-6)
-        self.n_preds = n_preds
+        self.n_upos_preds = n_upos_preds
+        self.n_xpos_preds = n_xpos_preds
+        self.n_feats_preds = n_feats_preds
 
     def update(self, batch, eval=False):
         inputs, orig_idx, word_orig_idx, sentlens, wordlens = unpack_batch(batch, self.use_cuda)
@@ -89,8 +101,7 @@ class Trainer(BaseTrainer):
         self.model.eval()
         batch_size = word.size(0)
         _, preds = self.model(word, word_mask, wordchars, wordchars_mask, upos, xpos, ufeats, pretrained, word_orig_idx, sentlens, wordlens)
-        # TODO: for feats, generate the k-best feats
-        def unmap(feat, sent):
+        def unmap(feat, sent, k):
             def itemize(tensor):
                 return (elem.item() for elem in tensor)
                 
@@ -100,13 +111,15 @@ class Trainer(BaseTrainer):
 
             with torch.no_grad():
                 sent = sent.transpose(0, 1) # Bring score to the front
-                scores, indices = torch.topk(sent, min(self.n_preds, sent.shape[0]), dim=0)
+                scores, indices = torch.topk(sent, min(k, sent.shape[0]), dim=0)
                 # scores is (n, k)
                 # unmap(tuple(indices[:, 0])
 
                 return tuple(zipper(sentk, scorek) for sentk, scorek in zip(indices, scores))
 
-        def unmap_ufeats(sent):
+        # TODO: for feats, generate the k-best feats
+        # Theere's probably a smarter way to do this
+        def unmap_ufeats(sent, k):
             def unmap(sent):
                 scores = tuple(map(lambda x: x[0].item(), sent))
                 features = tuple(map(lambda x: x[1], sent))
@@ -116,28 +129,31 @@ class Trainer(BaseTrainer):
 
             with torch.no_grad():
                 sent = sent.transpose(0, 1) # Bring score to the front
-                scores, indices = torch.topk(sent, min(self.n_preds, sent.shape[0]), dim=0)
+                scores, indices = torch.topk(sent, min(k, sent.shape[0]), dim=0)
                 nb = iter(NextBest(scores, indices))
-                return tuple(unmap(next(nb)) for i in range(self.n_preds))
+                return tuple(unmap(next(nb)) for i in range(k))
 
-        upos_seqs = [unmap('upos', sent) for sent in preds[0]]
-        xpos_seqs = [unmap('xpos', sent) for sent in preds[1]]
-        feats_seqs = [unmap_ufeats(sent) for sent in preds[2]]
+        upos_seqs = [unmap('upos', sent, self.n_upos_preds) for sent in preds[0]]
+        xpos_seqs = [unmap('xpos', sent, self.n_xpos_preds) for sent in preds[1]]
+        feats_seqs = [unmap_ufeats(sent, self.n_feats_preds) for sent in preds[2]]
 
-        pred_tokens = [[[[upos_seqs[i][k][j], xpos_seqs[i][k][j], feats_seqs[i][k][j]] for j in range(sentlens[i])] for i in range(batch_size)] for k in range(len(upos_seqs[0]))]
-        # Pred_tokens
-        # Indices: ijkl
+        # Tokens
+        # Indices: ijk
         # i: n_pred 
         # j: n_sentence
         # k: n_word
-        # l: 0=upos, 1=xpos, 2=ufeats
 
+        upos_tokens = [[[upos_seqs[i][k][j] for j in range(sentlens[i])] for i in range(batch_size)] for k in range(len(upos_seqs[0]))]
+        xpos_tokens = [[[xpos_seqs[i][k][j] for j in range(sentlens[i])] for i in range(batch_size)] for k in range(len(xpos_seqs[0]))]
+        feats_tokens = [[[feats_seqs[i][k][j] for j in range(sentlens[i])] for i in range(batch_size)] for k in range(len(feats_seqs[0]))]
         if unsort:
             #pred_tokens = utils.unsort(pred_tokens, orig_idx)
             # TODO: check if this is valid
-            pred_tokens = [utils.unsort(sent, orig_idx) for sent in pred_tokens]
+            upos_tokens = [utils.unsort(sent, orig_idx) for sent in upos_tokens]
+            xpos_tokens = [utils.unsort(sent, orig_idx) for sent in xpos_tokens]
+            feats_tokens = [utils.unsort(sent, orig_idx) for sent in feats_tokens]
         
-        return pred_tokens
+        return upos_tokens, xpos_tokens, feats_tokens
 
     def save(self, filename, skip_modules=True):
         model_state = self.model.state_dict()

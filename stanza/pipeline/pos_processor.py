@@ -25,13 +25,22 @@ class POSProcessor(UDProcessor):
     def _set_up_model(self, config, use_gpu):
         # get pretrained word vectors
         self._pretrain = Pretrain(config['pretrain_path']) if 'pretrain_path' in config else None
-        self._n_preds = config.get('n_preds', 3)
-        self._n_trainer_preds = config.get('n_trainer_preds', 54) # Stanza generates 54 XPOS tags
+        self._n_preds = config.get('n_preds', 1)
+        self._trainer_n_upos_preds = config.get('trainer_n_upos_preds', 21) # Stanza generates 21 XPOS tags
+        self._trainer_n_xpos_preds = config.get('trainer_n_xpos_preds', 54) # Stanza generates 54 XPOS tags
+        self._trainer_n_feats_preds = config.get('trainer_n_feats_preds', 1) # Feature predictions are expensive and once we change the POS tag they often don't match
         # set up trainer
-        self._trainer = Trainer(pretrain=self.pretrain, model_file=config['model_path'], use_cuda=use_gpu, n_preds=self._n_trainer_preds)
+        self._trainer = Trainer(
+                pretrain=self.pretrain, 
+                model_file=config['model_path'], 
+                use_cuda=use_gpu, 
+                n_upos_preds=self._trainer_n_upos_preds,
+                n_xpos_preds=self._trainer_n_xpos_preds,
+                n_feats_preds=self._trainer_n_feats_preds
+            )
         self._next_upos = lambda context: context.upos_index + 1
         self._next_xpos = lambda context: context.xpos_index + 1
-        self._next_ufeats = lambda context: context.ufeats_index + 1
+        self._next_feats = lambda context: context.feats_index + 1
         self._scorer = lambda ups, xps, ufs: (ups + xps + ufs) / 3
         self._level = config.get('level', Level.WORD)
 
@@ -104,32 +113,55 @@ class POSProcessor(UDProcessor):
 
         self._next_upos = config.get('next_upos', self._next_upos)
         self._next_xpos = config.get('next_xpos', self._next_xpos)
-        self._next_ufeats = config.get('next_ufeats', self._next_ufeats)
+        self._next_feats = config.get('next_feats', self._next_feats)
 
     def process(self, document):
         batch = DataLoader(
             document, self.config['batch_size'], self.config, self.pretrain, vocab=self.vocab, evaluation=True,
             sort_during_eval=True)
-        preds = []
+        upos_preds = []
+        xpos_preds = []
+        feats_preds = []
         for i, b in enumerate(batch):
-            preds.append(self.trainer.predict(b))
+            upos, xpos, feats = self.trainer.predict(b)
+            upos_preds.append(upos)
+            xpos_preds.append(xpos)
+            feats_preds.append(feats)
 
         # n_batch, n_pred, n_sentence, n_word, feature
 
         # Get rid of batch
         merged_preds = []
-        n_preds = min(self._n_trainer_preds, len(preds[0]))
+        n_preds = min(self._trainer_n_upos_preds, len(upos_preds[0]))
         for i in range(n_preds):
             pred = []
-            for pred_minibatch in preds:
+            for pred_minibatch in upos_preds:
                 pred.extend(pred_minibatch[i])
             merged_preds.append(pred)
-        preds = merged_preds
+        upos_preds = merged_preds
+
+        merged_preds = []
+        n_preds = min(self._trainer_n_xpos_preds, len(xpos_preds[0]))
+        for i in range(n_preds):
+            pred = []
+            for pred_minibatch in xpos_preds:
+                pred.extend(pred_minibatch[i])
+            merged_preds.append(pred)
+        xpos_preds = merged_preds
+
+        merged_preds = []
+        n_preds = min(self._trainer_n_feats_preds, len(feats_preds[0]))
+        for i in range(n_preds):
+            pred = []
+            for pred_minibatch in feats_preds:
+                pred.extend(pred_minibatch[i])
+            merged_preds.append(pred)
+        feats_preds = merged_preds
 
         docs = []
         scores = []
         serialized = batch.doc.to_serialized()
-        nb = NextBest(preds, self._level, self._scorer, self._next_upos, self._next_xpos, self._next_ufeats)
+        nb = NextBest(upos_preds, xpos_preds, feats_preds, self._level, self._scorer, self._next_upos, self._next_xpos, self._next_feats)
         for score, pred in itertools.islice(nb, self._n_preds):
             copy = doc.Document.from_serialized(serialized)
             # pred should be (n_sent, n_word, n_feature)
@@ -142,42 +174,39 @@ class POSProcessor(UDProcessor):
         return tuple(docs) #, scores TODO: return scores eventually
 
 class NextBest:
-    def __init__(self, preds, level, scorer, next_upos, next_xpos, next_ufeats):
+    def __init__(self, upos_preds, xpos_preds, feats_preds, level, scorer, next_upos, next_xpos, next_feats):
         # preds: (n_pred, n_sentence, n_word, feature, score)
-        self._preds = preds
-        self._n_preds = len(self._preds)
-        self._n_sents = len(self._preds[0])
-        self._upos = self._extract_feature(preds, 0)
-        self._xpos = self._extract_feature(preds, 1)
-        self._ufeats = self._extract_feature(preds, 2)
+        self._n_upos_preds = len(upos_preds)
+        self._n_xpos_preds = len(xpos_preds)
+        self._n_feats_preds = len(feats_preds)
+        self._n_sents = len(upos_preds[0])
+        self._upos = upos_preds
+        self._xpos = xpos_preds
+        self._feats = feats_preds
         self._scorer = scorer
         self._next_upos = next_upos
         self._next_xpos = next_xpos
-        self._next_ufeats = next_ufeats
+        self._next_feats = next_feats
         self._level = level
 
     @staticmethod
-    def _extract_feature(pred, fi):
-        return [[[pred[i][j][k][fi] for k in range(len(pred[i][j]))] for j in range(len(pred[i]))] for i in range(len(pred))]
-
-    @staticmethod
-    def _pack_features(upos, xpos, ufeats):
-        # Expects extracted upos, xpos, ufeats from _accesss
+    def _pack_features(upos, xpos, feats):
+        # Expects extracted upos, xpos, feats from _accesss
         # Should NOT have score index
-        return [[(upos[i][j], xpos[i][j], ufeats[i][j]) for j in range(len(upos[i]))] for i in range(len(upos))]
+        return [[(upos[i][j], xpos[i][j], feats[i][j]) for j in range(len(upos[i]))] for i in range(len(upos))]
 
     def _access(self, feat, index, score=False):
         si = 1 if score else 0
         empty_feature = [None, 0.0]
         return [[feat[index[i][j]][i][j][si] if index[i][j] >= 0 else empty_feature[si] for j in range(len(index[i]))] for i in range(len(index))]
 
-    def _score(self, upos_index, xpos_index, ufeats_index):
+    def _score(self, upos_index, xpos_index, feats_index):
         score = 0
         total_lengths = 0
         upos = self._access(self._upos, upos_index, score=True)
         xpos = self._access(self._xpos, xpos_index, score=True)
-        ufeats = self._access(self._ufeats, ufeats_index, score=True)
-        feats = self._pack_features(upos, xpos, ufeats)
+        feats = self._access(self._feats, feats_index, score=True)
+        feats = self._pack_features(upos, xpos, feats)
         for sent in feats:
             score += sum(map(lambda x: self._scorer(*x), sent))
             total_lengths += len(sent)
@@ -201,93 +230,85 @@ class NextBest:
 
         return self
 
-    def _next_wrapper(self, next_feat, upos_i, xpos_i, ufeats_i, i, j):
-        upos = [self._upos[k][i][j] for k in range(len(self._upos))]
-        xpos = [self._xpos[k][i][j] for k in range(len(self._upos))]
-        ufeats = [self._ufeats[k][i][j] for k in range(len(self._upos))]
-        return next_feat(upos, xpos, ufeats, upos_i[i][j], xpos_i[i][j], ufeats_i[i][j], (i, j))
-        
-
     def __next__(self):
         if len(self._queue) == 0:
             raise StopIteration
 
-        score_ret, _, upos_index_ret, xpos_index_ret, ufeats_index_ret = heapq.heappop(self._queue)
+        score_ret, _, upos_index_ret, xpos_index_ret, feats_index_ret = heapq.heappop(self._queue)
         if self._level == Level.DOCUMENT:
             new_upos_index = [list(sent) for sent in upos_index_ret]
             new_xpos_index = [list(sent) for sent in xpos_index_ret]
-            new_ufeats_index = [list(sent) for sent in ufeats_index_ret]
+            new_feats_index = [list(sent) for sent in feats_index_ret]
 
         for i in range(self._n_sents):
-            n_words = len(self._preds[0][i])
+            n_words = len(self._upos[0][i])
             if self._level == Level.SENTENCE:
                 new_upos_index = [list(sent) for sent in upos_index_ret]
                 new_xpos_index = [list(sent) for sent in xpos_index_ret]
-                new_ufeats_index = [list(sent) for sent in ufeats_index_ret]
+                new_feats_index = [list(sent) for sent in feats_index_ret]
 
             for j in range(n_words):
-                namedtuple('POSContext', 'next_upos next_xpos next_ufeats scorer upos xpos ufeats upos_index xpos_index ufeats_index word_index')
                 context = POSContext(
                         next_upos=self._next_upos,
                         next_xpos=self._next_xpos,
-                        next_ufeats=self._next_ufeats,
+                        next_feats=self._next_feats,
                         scorer=self._scorer,
                         upos=[self._upos[k][i][j] for k in range(len(self._upos))],
                         xpos=[self._xpos[k][i][j] for k in range(len(self._xpos))],
-                        ufeats=[self._ufeats[k][i][j] for k in range(len(self._upos))],
+                        feats=[self._feats[k][i][j] for k in range(len(self._feats))],
                         word_index=(i, j),
                         upos_index=upos_index_ret[i][j],
                         xpos_index=xpos_index_ret[i][j],
-                        ufeats_index=ufeats_index_ret[i][j]
+                        feats_index=feats_index_ret[i][j]
                 )
 
                 next_upos = self._next_upos(context)
                 next_xpos = self._next_xpos(context)
-                next_ufeats = self._next_ufeats(context)
+                next_feats = self._next_feats(context)
 
                 if self._level == Level.WORD:
                     new_upos_index = [list(sent) for sent in upos_index_ret]
                     new_xpos_index = [list(sent) for sent in xpos_index_ret]
-                    new_ufeats_index = [list(sent) for sent in ufeats_index_ret]
+                    new_feats_index = [list(sent) for sent in feats_index_ret]
 
-                if next_upos < self._n_preds:
+                if next_upos < self._n_upos_preds:
                     new_upos_index[i][j] = next_upos
 
-                if next_xpos < self._n_preds:
+                if next_xpos < self._n_xpos_preds:
                     new_xpos_index[i][j] = next_xpos
 
-                if next_ufeats < self._n_preds:
-                    new_ufeats_index[i][j] = next_ufeats
+                if next_feats < self._n_feats_preds:
+                    new_feats_index[i][j] = next_feats
 
                 if self._level == Level.WORD:
-                    self._handle_potential_new_index(new_upos_index, new_xpos_index, new_ufeats_index)
+                    self._handle_potential_new_index(new_upos_index, new_xpos_index, new_feats_index)
 
             if self._level == Level.SENTENCE:
-                self._handle_potential_new_index(new_upos_index, new_xpos_index, new_ufeats_index)
+                self._handle_potential_new_index(new_upos_index, new_xpos_index, new_feats_index)
 
         if self._level == Level.DOCUMENT:
-            self._handle_potential_new_index(new_upos_index, new_xpos_index, new_ufeats_index)
+            self._handle_potential_new_index(new_upos_index, new_xpos_index, new_feats_index)
 
 
         upos_ret = self._access(self._upos, upos_index_ret)
         xpos_ret = self._access(self._xpos, xpos_index_ret)
-        ufeats_ret = self._access(self._ufeats, ufeats_index_ret)
+        feats_ret = self._access(self._feats, feats_index_ret)
 
-        return -score_ret, self._pack_features(upos_ret, xpos_ret, ufeats_ret)
+        return -score_ret, self._pack_features(upos_ret, xpos_ret, feats_ret)
 
-    def _handle_potential_new_index(self, new_upos_index, new_xpos_index, new_ufeats_index):
+    def _handle_potential_new_index(self, new_upos_index, new_xpos_index, new_feats_index):
         new_upos_index = tuple(tuple(sent) for sent in new_upos_index)
         new_xpos_index = tuple(tuple(sent) for sent in new_xpos_index)
-        new_ufeats_index = tuple(tuple(sent) for sent in new_ufeats_index)
+        new_feats_index = tuple(tuple(sent) for sent in new_feats_index)
 
-        new_index = (new_upos_index, new_xpos_index, new_ufeats_index)
+        new_index = (new_upos_index, new_xpos_index, new_feats_index)
         if new_index in self._seen:
             return
 
         self._seen.add(new_index)
-        new_score = self._score(new_upos_index, new_xpos_index, new_ufeats_index)
+        new_score = self._score(new_upos_index, new_xpos_index, new_feats_index)
         tc = self._tie_counter
         self._tie_counter += 1
-        heapq.heappush(self._queue, (-new_score, tc, new_upos_index, new_xpos_index, new_ufeats_index))
+        heapq.heappush(self._queue, (-new_score, tc, new_upos_index, new_xpos_index, new_feats_index))
 
-POSContext = namedtuple('POSContext', 'next_upos next_xpos next_ufeats scorer upos xpos ufeats upos_index xpos_index ufeats_index word_index')
+POSContext = namedtuple('POSContext', 'next_upos next_xpos next_feats scorer upos xpos feats upos_index xpos_index feats_index word_index')
