@@ -27,11 +27,13 @@ START_CHAR = 'start_char'
 END_CHAR = 'end_char'
 TYPE = 'type'
 SENTIMENT = 'sentiment'
-
 # Scores for various portions
 POS_SCORE = 'pos_score'
 LEMMA_SCORE = 'lemma_score'
 DEPPARSE_SCORE = 'depparse_score'
+UPOS_SCORE = 'upos_score'
+XPOS_SCORE = 'xpos_score'
+FEATS_SCORE = 'feats_score'
 
 def _readonly_setter(self, name):
     full_classname = self.__class__.__module__
@@ -808,8 +810,11 @@ class Word(StanzaObject):
 
         self._lemma = word_entry.get(LEMMA, None)
         self._upos = word_entry.get(UPOS, None)
+        self._upos_score = word_entry.get(UPOS_SCORE, None)
         self._xpos = word_entry.get(XPOS, None)
+        self._xpos_score = word_entry.get(XPOS_SCORE, None)
         self._feats = word_entry.get(FEATS, None)
+        self._feats_score = word_entry.get(FEATS_SCORE, None)
         self._head = word_entry.get(HEAD, None)
         self._deprel = word_entry.get(DEPREL, None)
         self._deps = word_entry.get(DEPS, None)
@@ -863,6 +868,17 @@ class Word(StanzaObject):
         self._upos = value if self._is_null(value) == False else None
 
     @property
+    def upos_score(self):
+        """ Access the score of the universal part-of-speech of this word. Example: 0.99"""
+        return self._upos_score
+
+    @upos_score.setter
+    def upos_score(self, value):
+        """ Set the word's universal part-of-speech score value. Example: 0.99"""
+        self._upos_score = value if self._is_null(value) == False else None
+
+
+    @property
     def xpos(self):
         """ Access the treebank-specific part-of-speech of this word. Example: 'NNP'"""
         return self._xpos
@@ -873,6 +889,17 @@ class Word(StanzaObject):
         self._xpos = value if self._is_null(value) == False else None
 
     @property
+    def xpos_score(self):
+        """ Access the score of the treebank-specific part-of-speech of this word. Example: 0.99"""
+        return self._xpos_score
+
+    @xpos_score.setter
+    def xpos_score(self, value):
+        """ Set the word's treebank-specific part-of-speech score value. Example: 0.99"""
+        self._xpos_score = value if self._is_null(value) == False else None
+
+
+    @property
     def feats(self):
         """ Access the morphological features of this word. Example: 'Gender=Fem'"""
         return self._feats
@@ -881,6 +908,17 @@ class Word(StanzaObject):
     def feats(self, value):
         """ Set this word's morphological features. Example: 'Gender=Fem'"""
         self._feats = value if self._is_null(value) == False else None
+
+    @property
+    def feats_score(self):
+        """ Access the score of the morphological features of this word. Example: 0.99"""
+        return self._feats_score
+
+    @feats_score.setter
+    def feats_score(self, value):
+        """ Set this word's morphological features score. Example: 0.99"""
+        self._feats_score = value if self._is_null(value) == False else None
+
 
     @property
     def head(self):
@@ -969,7 +1007,7 @@ class Word(StanzaObject):
     def __repr__(self):
         return json.dumps(self.to_dict(), indent=2, ensure_ascii=False)
 
-    def to_dict(self, fields=[ID, TEXT, LEMMA, UPOS, XPOS, FEATS, HEAD, DEPREL, DEPS, MISC, START_CHAR, END_CHAR]):
+    def to_dict(self, fields=[ID, TEXT, LEMMA, UPOS, UPOS_SCORE, XPOS, XPOS_SCORE, FEATS, FEATS_SCORE, HEAD, DEPREL, DEPS, MISC, START_CHAR, END_CHAR]):
         """ Dumps the word into a dictionary.
         """
         word_dict = {}
@@ -980,7 +1018,7 @@ class Word(StanzaObject):
 
     def pretty_print(self):
         """ Print the word in one line. """
-        features = [ID, TEXT, LEMMA, UPOS, XPOS, FEATS, HEAD, DEPREL]
+        features = [ID, TEXT, LEMMA, UPOS, UPOS_SCORE, XPOS, XPOS_SCORE< FEATS, FEATS_SCORE, HEAD, DEPREL]
         feature_str = ";".join(["{}={}".format(k, getattr(self, k)) for k in features if getattr(self, k) is not None])
         return f"<{self.__class__.__name__} {feature_str}>"
 

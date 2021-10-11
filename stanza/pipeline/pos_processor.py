@@ -162,11 +162,12 @@ class POSProcessor(UDProcessor):
         scores = []
         serialized = batch.doc.to_serialized()
         nb = NextBest(upos_preds, xpos_preds, feats_preds, self._level, self._scorer, self._next_upos, self._next_xpos, self._next_feats)
-        for score, pred in itertools.islice(nb, self._n_preds):
+        for score, word_scores, pred in itertools.islice(nb, self._n_preds):
             copy = doc.Document.from_serialized(serialized)
             # pred should be (n_sent, n_word, n_feature)
             pred = unsort(pred, batch.data_orig_idx)
             copy.set([doc.UPOS, doc.XPOS, doc.FEATS], [y for x in pred for y in x])
+            copy.set([doc.UPOS_SCORE, doc.XPOS_SCORE, doc.FEATS_SCORE], [y for x in word_scores for y in x])
             copy.set([doc.POS_SCORE], [score], to_document=True)
             docs.append(copy)
             scores.append(score)
@@ -294,7 +295,14 @@ class NextBest:
         xpos_ret = self._access(self._xpos, xpos_index_ret)
         feats_ret = self._access(self._feats, feats_index_ret)
 
-        return -score_ret, self._pack_features(upos_ret, xpos_ret, feats_ret)
+        upos_score_ret = self._access(self._upos, upos_index_ret, score=True)
+        xpos_score_ret = self._access(self._xpos, xpos_index_ret, score=True)
+        feats_score_ret = self._access(self._feats, feats_index_ret, score=True)
+
+        word_scores = self._pack_features(upos_score_ret, xpos_score_ret, feats_score_ret)
+        features = self._pack_features(upos_ret, xpos_ret, feats_ret)
+
+        return -score_ret, word_scores, features
 
     def _handle_potential_new_index(self, new_upos_index, new_xpos_index, new_feats_index):
         new_upos_index = tuple(tuple(sent) for sent in new_upos_index)
