@@ -17,22 +17,22 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 setup(
-    name='stanza',
+    name='multi_stanza',
 
     # Versions should comply with PEP440.  For a discussion on single-sourcing
     # the version across setup.py and the project code, see
     # https://packaging.python.org/en/latest/single_source_version.html
     version=VERSION,
 
-    description='A Python NLP Library for Many Human Languages, by the Stanford NLP Group',
+    description='An Extension to Stanford\'s Stanza, that supports multiple parses and error correction.',
     long_description=long_description,
     long_description_content_type="text/markdown",
     # The project's main homepage.
-    url='https://github.com/stanfordnlp/stanza',
+    url='https://github.com/giorgianb/multi-stanza',
 
     # Author details
     author='Stanford Natural Language Processing Group',
-    author_email='jebolton@stanford.edu',
+    author_email='gborcatasciu@cs.stonybrook.edu',
 
     # Choose your license
     license='Apache License 2.0',
