@@ -19,7 +19,7 @@
 
 ## Issues and Usage Q&A
 
-To ask questions, report issues or request features 🤔, please use the [GitHub Issue Tracker](https://github.com/giorgianb/multi-stanza/issues). Before creating a new issue, please make sure to search for existing issues that may solve your problem, or visit the [Frequently Asked Questions (FAQ) page](https://stanfordnlp.github.io/stanza/faq.html) on our website.
+To ask questions, report issues or request features 🤔, please use the [GitHub Issue Tracker](https://github.com/giorgianb/multi-stanza/issues). Multi-Stanza is still in active development. Please give feedback on what sort of parsing results you are hoping to get out of multi-stanza so that our multi-stanza can address the challenges of parsing real-world data! Before creating a new issue, please make sure to search for existing issues that may solve your problem, or visit the [Frequently Asked Questions (FAQ) page](https://stanfordnlp.github.io/stanza/faq.html) on our website.
 
 ## Installation
 
