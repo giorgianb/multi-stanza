@@ -32,7 +32,7 @@ cd stanza
 pip install -e .
 ```
 
-## Running Stanza
+## Running Multi-Stanza
 
 ### Getting Started with the neural pipeline
 
@@ -41,9 +41,9 @@ To run your first Stanza pipeline, simply following these steps in your Python i
 ```python
 >>> import stanza
 >>> stanza.download('en')       # This downloads the English models for the neural pipeline
->>> nlp = stanza.Pipeline('en') # This sets up a default neural pipeline in English
->>> doc = nlp("Barack Obama was born in Hawaii.  He was elected president in 2008.")
->>> doc.sentences[0].print_dependencies()
+>>> nlp = stanza.Pipeline('en') # This sets up a default neural pipeline in English. By default, the default pipeline returns only the best interpretation.
+>>> docs = nlp("Barack Obama was born in Hawaii.  He was elected president in 2008.") # Returns a list of documents, each containing an interpretation of the sentence
+>>> docs[0].sentences[0].print_dependencies() # Print the dependencies of the best interpretation
 ```
 
 If you encounter `requests.exceptions.ConnectionError`, please try to use a proxy:
@@ -53,11 +53,11 @@ If you encounter `requests.exceptions.ConnectionError`, please try to use a prox
 >>> proxies = {'http': 'http://ip:port', 'https': 'http://ip:port'}
 >>> stanza.download('en', proxies=proxies)  # This downloads the English models for the neural pipeline
 >>> nlp = stanza.Pipeline('en')             # This sets up a default neural pipeline in English
->>> doc = nlp("Barack Obama was born in Hawaii.  He was elected president in 2008.")
->>> doc.sentences[0].print_dependencies()
+>>> docs = nlp("Barack Obama was born in Hawaii.  He was elected president in 2008.") # Returns a list of documents, each containing an interpretation of the sentence
+>>> docs[0].sentences[0].print_dependencies() # Print the dependencies of the best interpretation
 ```
 
-The last command will print out the words in the first sentence in the input string (or [`Document`](https://stanfordnlp.github.io/stanza/data_objects.html#document), as it is represented in Stanza), as well as the indices for the word that governs it in the Universal Dependencies parse of that sentence (its "head"), along with the dependency relation between the words. The output should look like:
+The last command will print out the words in the first sentence in the input string (or [`Document`](https://stanfordnlp.github.io/stanza/data_objects.html#document), as it is represented in Multi-Stanza), as well as the indices for the word that governs it in the Universal Dependencies parse of that sentence (its "head"), along with the dependency relation between the words. The output should look like:
 
 ```
 ('Barack', '4', 'nsubj:pass')
@@ -69,8 +69,36 @@ The last command will print out the words in the first sentence in the input str
 ('.', '4', 'punct')
 ```
 
-See [our getting started guide](https://stanfordnlp.github.io/stanza/installation_usage.html#getting-started) for more details.
-
+### Obtaining Multiple Parses
+Most languages are not unambiguous parsable. This means there are some sentences within the language for which there are multiple valid interpretations. Consider the sentence:
+````
+I saw the man with the telescope.
+````
+For this sentence, it is not clear whether `the man` has the telescope or `I` have the telescope. Both intepretations are plausible. With Multi-Stanza, we can obtain both intepretations:
+```python
+>>> import stanza
+>>> stanza.download('en')       # This downloads the English models for the neural pipeline
+>>> nlp = stanza.Pipeline('en', depparse_n_preds=2) # This sets up a neural pipeline in English. It generates two results at the dependency parsing level.
+>>> docs = nlp("I saw the man with the telescope.") # Returns a list of documents, each containing an interpretation of the sentence
+>>> docs[0].sentences[0].print_dependencies() # Print the dependencies of the first interpretation. The man has the telescope
+('I', 2, 'nsubj')
+('saw', 0, 'root')
+('the', 4, 'det')
+('man', 2, 'obj')
+('with', 7, 'case')
+('the', 7, 'det')
+('telescope', 4, 'nmod')
+('.', 2, 'punct')
+>>> docs[1].sentences[0].print_dependencies() # Print the dependencies of the second interpretation. I have the telescope!
+('I', 2, 'nsubj')
+('saw', 0, 'root')
+('the', 4, 'det')
+('man', 2, 'obj')
+('with', 7, 'case')
+('the', 7, 'det')
+('telescope', 2, 'obl')
+('.', 2, 'punct')
+```
 ## LICENSE
 
-Stanza is released under the Apache License, Version 2.0. See the [LICENSE](https://github.com/stanfordnlp/stanza/blob/master/LICENSE) file for more details.
+Multi-Stanza is released under the Apache License, Version 2.0. See the [LICENSE](https://github.com/giorgianb/multi-stanza/blob/multi-pred/LICENSE) file for more details.
