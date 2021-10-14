@@ -227,10 +227,15 @@ class Pipeline:
                     # Not all processors currently support multiple predictions at the moment
                     # TODO: modify this for beam search
                     if type(doc) is tuple:
-                        new_docs.extend(doc)
+                        processor_docs, processor_scores = doc
+                        new_docs.extend(zip(processor_docs, processor_scores))
                     else:
                         new_docs.append(doc)
-                docs = new_docs
+                if type(new_docs[0]) is tuple:
+                    new_docs.sort(key=lambda pair: pair[1], reverse=True)
+                    docs = tuple(map(lambda x: x[0], new_docs))
+                else:
+                    docs = new_docs
 
         return docs
 

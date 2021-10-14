@@ -188,6 +188,7 @@ class LemmaProcessor(UDProcessor):
 
         # map empty string lemmas to '_'
         docs = []
+        scores = []
         serialized = batch.doc.to_serialized()
         for score, pred in zip(total_scores, complete_preds):
             copy = doc.Document.from_serialized(serialized)
@@ -195,5 +196,6 @@ class LemmaProcessor(UDProcessor):
             copy.set([doc.LEMMA], pred)
             copy.set([doc.LEMMA_SCORE], [score], to_document=True)
             docs.append(copy)
+            scores.append(score)
 
-        return tuple(docs)
+        return tuple(docs), tuple(scores)

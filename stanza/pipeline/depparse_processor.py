@@ -12,6 +12,7 @@ from stanza.pipeline.processor import UDProcessor, register_processor
 
 import itertools
 import heapq
+import math
 
 DEFAULT_SEPARATE_BATCH=150
 
@@ -68,7 +69,7 @@ class DepparseProcessor(UDProcessor):
 
                 docs.append(copy)
 
-            return tuple(docs)
+            return tuple(docs), tuple(best_scores)
         except RuntimeError as e:
             if str(e).startswith("CUDA out of memory. Tried to allocate"):
                 new_message = str(e) + " ... You may be able to compensate for this by separating long sentences into their own batch with a parameter such as depparse_min_length_to_batch_separately=150 or by limiting the overall batch size with depparse_batch_size=400."
@@ -98,6 +99,12 @@ class NextBest:
         score = sum(self._scores[i][idx] for i, idx in enumerate(index))
         return score
 
+    def _ret_score(self, index):
+        def sigmoid(x):
+            return math.exp(x)/(math.exp(x) + 1)
+        score = sum(1 - sigmoid(self._scores[i][idx]) for i, idx in enumerate(index))/len(index)
+        return score
+
     def __iter__(self):
         # What does an index look like?
         # Use simple summation to combine score across features
@@ -107,7 +114,7 @@ class NextBest:
         self._tie_counter = 0
         tc = self._tie_counter
         self._tie_counter += 1
-        self._queue = [(-score, tc, start_index)]
+        self._queue = [(score, tc, start_index)]
         self._seen.add(start_index)
 
         return self
@@ -132,6 +139,7 @@ class NextBest:
             new_score = self._score(new_index)
             tc = self._tie_counter
             self._tie_counter += 1
-            heapq.heappush(self._queue, (-new_score, tc, new_index))
+            heapq.heappush(self._queue, (new_score, tc, new_index))
 
-        return -score_ret, self._access(index_ret)
+        score_ret = self._ret_score(index_ret)
+        return score_ret, self._access(index_ret)

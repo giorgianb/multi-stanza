@@ -102,7 +102,7 @@ class POSProcessor(UDProcessor):
             docs.append(copy)
             scores.append(score)
 
-        return tuple(docs) #, scores TODO: return scores eventually
+        return tuple(docs), tuple(scores)
 
 class NextBest:
     def __init__(self, upos_preds, xpos_preds, feats_preds, level, scorer, next_upos, next_xpos, next_feats):

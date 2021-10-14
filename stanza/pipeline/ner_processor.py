@@ -53,7 +53,8 @@ class NERProcessor(UDProcessor):
             total = len(copy.build_ents())
             logger.debug(f'{total} entities found in document.')
 
-        return tuple(docs)
+        # return docs
+        return docs[0] # TODO: get multi-stanza working with NER
 
     def bulk_process(self, docs):
         """
