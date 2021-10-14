@@ -38,82 +38,12 @@ class POSProcessor(UDProcessor):
                 n_xpos_preds=self._trainer_n_xpos_preds,
                 n_feats_preds=self._trainer_n_feats_preds
             )
-        self._next_upos = lambda context: context.upos_index + 1
-        self._next_xpos = lambda context: context.xpos_index + 1
-        self._next_feats = lambda context: context.feats_index + 1
-        self._scorer = lambda ups, xps, ufs: (ups + xps + ufs) / 3
+
         self._level = config.get('level', Level.WORD)
-
-        if config.get('top_k_mode', 0) == 1:
-            # TODO: these have to be verified
-            # Look at noun. Is it ok to have it a broad subset (all nouns, including proper)?
-            # or a strict one?
-            UPOS_MAPPINGS = {
-                    'ADJ': {'JJ', 'JJR', 'JJS'},
-                    'ADP': {'IN', 'RP'},
-                    'ADV': {'RB', 'RBR', 'RBS'},
-                    'AUX': {'MD'},
-                    'CCONJ': {'CC'},
-                    'DET': {'DT', 'PDT'},
-                    'INTJ': {'UH'},
-                    'NOUN': {'NN', 'NNS', 'NNP', 'NNPS'},
-                    'NUM': {'CD'},
-                    'PART': {'TO', 'POS'},
-                    'PRON': {'PRP', 'PRP$', 'WP', 'WDT', 'EX', 'WP$'},
-                    'PROPN': {'NNP', 'NNPS'},
-                    'PUNCT': {'.'},
-                    'SCONJ': {'IN', 'WRB'},
-                    'SYM': {'SYM'},
-                    'VERB': {'VB', 'VBD', 'VBG', 'VBN', 'VBP', 'VBZ'},
-                    'X': {'FW', 'LS'}
-            }
-            def next_xpos(context):
-                # get what would be the next upos tag
-                next_upos = context.next_upos(context)
-                # There's no more upos tags so we can't match
-                if next_upos >= len(context.upos):
-                    return len(context.xpos) # This indicates no more options
-
-                # this is the set of XPOS tags we'll accept
-                options_set = UPOS_MAPPINGS[context.upos[next_upos][0]]
-                # this is the set of XPOS tags we can actually use
-                xpos_options = tuple(filter(lambda x: x[1][0] in options_set, enumerate(context.xpos)))
-                # are there actually any tags?
-                if len(xpos_options) == 0:
-                    return len(context.xpos)
-
-                # return the highest-scoring XPOS tag that matches the UPOS tag
-                return xpos_options[0][0]
-            self._next_xpos = next_xpos
-            # Ignore XPOS score
-            # TODO: figure out how to enable XPOS score
-            self._scorer = lambda ups, xps, ufs: (ups + ufs) / 2
-        elif config.get('top_k_mode', 0) == 2:
-            EQUIVALENCE_CLASSES = (
-                    {'JJ', 'JJR', 'JJS'},
-                    {'NN', 'NNS', 'NNP', 'NNPS'},
-                    {'PRP', 'PRP$'},
-                    {'RB', 'RBR', 'RBS'},
-                    {'VB', 'VBD', 'VBG', 'VBN', 'VBP'},
-                    {'WP', 'WP$', 'WRB'}
-            )
-            NEED_CHECKED = reduce(lambda a, b: a | b, EQUIVALENCE_CLASSES)
-            MAPPING = {t:c for c in EQUIVALENCE_CLASSES for t in c}
-            def next_xpos(context):
-                if context.xpos[context.xpos_index][0] not in NEED_CHECKED:
-                    return context.xpos_index + 1
-
-                c = MAPPING[context.xpos[context.xpos_index][0]]
-                for i in range(context.xpos_index + 1, len(context.xpos)):
-                    if context.xpos[i][0] not in c:
-                        return i
-
-                return len(context.xpos) # This indicates that there are no more options
-            self._next_xpos = next_xpos
-
-        self._next_upos = config.get('next_upos', self._next_upos)
-        self._next_xpos = config.get('next_xpos', self._next_xpos)
-        self._next_feats = config.get('next_feats', self._next_feats)
+        self._next_upos = config.get('next_upos', lambda context: context.upos_index + 1)
+        self._next_xpos = config.get('next_xpos', lambda context: context.xpos_index + 1)
+        self._next_feats = config.get('next_feats', lambda context: context.feats_index + 1)
+        self._scorer = config.get('scorer', lambda ups, xps, ufs: (ups + xps + ufs) / 3)
 
     def process(self, document):
         batch = DataLoader(
