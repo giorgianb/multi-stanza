@@ -25,7 +25,7 @@ class DepparseProcessor(UDProcessor):
 
     def __init__(self, config, pipeline, use_gpu):
         self._pretagged = None
-        self._n_preds = config.get('n_preds', 3)
+        self._n_preds = config.get('n_preds', 1)
         super().__init__(config, pipeline, use_gpu)
 
     def _set_up_requires(self):

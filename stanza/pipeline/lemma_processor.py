@@ -89,7 +89,7 @@ class LemmaProcessor(UDProcessor):
         # run lemmatizer in identity mode
         self._use_identity = None
         self._pretagged = None
-        self._n_preds = config.get('n_preds', 3)
+        self._n_preds = config.get('n_preds', 1)
         super().__init__(config, pipeline, use_gpu)
 
     @property
