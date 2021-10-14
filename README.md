@@ -15,6 +15,7 @@
     <a href="https://pypi.org/project/stanza/">
         <img alt="Python Versions" src="https://img.shields.io/pypi/pyversions/stanza?colorB=blue">
     </a>
+</div>
 
 ## Issues and Usage Q&A
 
